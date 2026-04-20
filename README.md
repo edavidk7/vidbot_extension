@@ -173,6 +173,8 @@ uv run python scripts/estimate_instrinsics.py \
 
 Then convert/export the result into `camera_intrinsic.json` format above.
 
+This matrix needs to be transposed before being linearized for the vidbot format.
+
 ### Step 3) (Optional) Estimate depth from RGB frames
 
 If your dataset does not contain `depth/*.png`, estimate depth first.
