@@ -11,11 +11,12 @@ import sys
 
 import cv2
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.patches import FancyArrowPatch, Rectangle
 from mpl_toolkits.mplot3d import proj3d
-import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -44,14 +45,14 @@ def draw_coord_frame(ax, origin, rotation=None, scale=0.03, labels=True):
             [origin[0], origin[0] + direction[0]],
             [origin[1], origin[1] + direction[1]],
             [origin[2], origin[2] + direction[2]],
-            mutation_scale=10, lw=2, arrowstyle="-|>", color=colors[i],
+            mutation_scale=10,
+            lw=2,
+            arrowstyle="-|>",
+            color=colors[i],
         )
         ax.add_artist(arrow)
         if labels:
-            ax.text(origin[0] + direction[0] * 1.3,
-                    origin[1] + direction[1] * 1.3,
-                    origin[2] + direction[2] * 1.3,
-                    axis_labels[i], color=colors[i], fontsize=8)
+            ax.text(origin[0] + direction[0] * 1.3, origin[1] + direction[1] * 1.3, origin[2] + direction[2] * 1.3, axis_labels[i], color=colors[i], fontsize=8)
 
 
 def load_intrinsic(dataset_path):
@@ -74,14 +75,8 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
     color_rgb = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2RGB)
 
     # Load scene meta (detection results)
-    meta_files = sorted([
-        f for f in os.listdir(os.path.join(dataset_path, "scene_meta"))
-        if f.startswith(f"{frame_id:06d}")
-    ])
-    pred_files = sorted([
-        f for f in os.listdir(os.path.join(dataset_path, "prediction"))
-        if f.startswith(f"{frame_id:06d}")
-    ])
+    meta_files = sorted([f for f in os.listdir(os.path.join(dataset_path, "scene_meta")) if f.startswith(f"{frame_id:06d}")])
+    pred_files = sorted([f for f in os.listdir(os.path.join(dataset_path, "prediction")) if f.startswith(f"{frame_id:06d}")])
 
     if not meta_files:
         print(f"No results found for frame {frame_id}")
@@ -102,12 +97,9 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
             bboxes = bboxes[0]  # unbatch
         for i, bbox in enumerate(bboxes):
             x1, y1, x2, y2 = bbox
-            rect = Rectangle((x1, y1), x2 - x1, y2 - y1,
-                              linewidth=2, edgecolor=plt.cm.tab10(i), facecolor="none")
+            rect = Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=plt.cm.tab10(i), facecolor="none")
             ax.add_patch(rect)
-            ax.text(x1, y1 - 5, f"Object {i}", color=plt.cm.tab10(i),
-                    fontsize=10, fontweight="bold",
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8))
+            ax.text(x1, y1 - 5, f"Object {i}", color=plt.cm.tab10(i), fontsize=10, fontweight="bold", bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8))
     ax.set_title("Detected Objects", fontsize=14, fontweight="bold")
     ax.axis("off")
 
@@ -141,8 +133,7 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
                 bboxes = bboxes[0]
             for i, bbox in enumerate(bboxes):
                 x1, y1, x2, y2 = bbox
-                rect = Rectangle((x1, y1), x2 - x1, y2 - y1,
-                                  linewidth=2, edgecolor="white", facecolor="none", linestyle="--")
+                rect = Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor="white", facecolor="none", linestyle="--")
                 ax.add_patch(rect)
     ax.set_title("Depth + Detections", fontsize=14, fontweight="bold")
     ax.axis("off")
@@ -160,8 +151,7 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
 
     n_show = min(n_objects, 5)
     fig = plt.figure(figsize=(24, 6 * n_show), facecolor="white")
-    fig.suptitle(f"VidBot Affordance Predictions — Frame {frame_id}, \"open cabinet\"",
-                 fontsize=16, fontweight="bold", y=1.01)
+    fig.suptitle(f"VidBot Affordance Predictions — Frame {frame_id}", fontsize=16, fontweight="bold", y=1.01)
 
     best_global_loss = float("inf")
     best_global_file = pred_files[0]
@@ -263,10 +253,8 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
                 else:
                     color = cmap(rank / n_trajs)
                     alpha = 0.5
-                ax.plot(traj[:, 0], traj[:, 1], traj[:, 2],
-                        color=color, alpha=alpha, linewidth=0.8)
-                ax.scatter(traj[0, 0], traj[0, 1], traj[0, 2],
-                           c="green", s=15, marker="o", zorder=5)
+                ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], color=color, alpha=alpha, linewidth=0.8)
+                ax.scatter(traj[0, 0], traj[0, 1], traj[0, 2], c="green", s=15, marker="o", zorder=5)
 
             # Draw camera coordinate frame at origin
             draw_coord_frame(ax, [0, 0, 0], scale=0.05)
@@ -280,16 +268,14 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
                     grasp_pos = grasp[:3, 3]
                     grasp_rot = grasp[:3, :3]
                     draw_coord_frame(ax, grasp_pos, grasp_rot, scale=0.04, labels=True)
-                    ax.scatter(*grasp_pos, c="magenta", s=80, marker="*",
-                               zorder=10, label="Grasp pose")
+                    ax.scatter(*grasp_pos, c="magenta", s=80, marker="*", zorder=10, label="Grasp pose")
 
             ax.set_xlabel("X (m)", fontsize=8)
             ax.set_ylabel("Y (m)", fontsize=8)
             ax.set_zlabel("Z (m)", fontsize=8)
             ax.view_init(elev=-70, azim=-90)
 
-        ax.set_title(f"Obj {obj_idx}: Predicted Trajectories ({len(trajs)} samples)",
-                     fontsize=12, fontweight="bold")
+        ax.set_title(f"Obj {obj_idx}: Predicted Trajectories ({len(trajs)} samples)", fontsize=12, fontweight="bold")
 
     plt.tight_layout()
     path2 = os.path.join(out_dir, f"predictions_{frame_id:06d}.png")
@@ -325,18 +311,15 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
         print(f"  Object {obj_idx}: best traj #{best_idx}{loss_str}")
 
         fig = plt.figure(figsize=(16, 12), facecolor="white")
-        fig.suptitle(f"Trajectory Detail — Frame {frame_id}, Object {obj_idx} (traj #{best_idx}{loss_str})",
-                     fontsize=16, fontweight="bold")
+        fig.suptitle(f"Trajectory Detail — Frame {frame_id}, Object {obj_idx} (traj #{best_idx}{loss_str})", fontsize=16, fontweight="bold")
 
         # 3D view
         ax = fig.add_subplot(1, 2, 1, projection="3d")
         for ti in range(min(len(trajs), 40)):
-            ax.plot(trajs[ti, :, 0], trajs[ti, :, 1], trajs[ti, :, 2],
-                    color="gray", alpha=0.1, linewidth=0.5)
+            ax.plot(trajs[ti, :, 0], trajs[ti, :, 1], trajs[ti, :, 2], color="gray", alpha=0.1, linewidth=0.5)
         colors = plt.cm.plasma(np.linspace(0, 1, len(best_traj)))
         for hi in range(len(best_traj) - 1):
-            ax.plot(best_traj[hi:hi + 2, 0], best_traj[hi:hi + 2, 1], best_traj[hi:hi + 2, 2],
-                    color=colors[hi], linewidth=3)
+            ax.plot(best_traj[hi : hi + 2, 0], best_traj[hi : hi + 2, 1], best_traj[hi : hi + 2, 2], color=colors[hi], linewidth=3)
         ax.scatter(*best_traj[0], c="lime", s=100, marker="o", zorder=10, label="Start")
         ax.scatter(*best_traj[-1], c="red", s=100, marker="X", zorder=10, label="End")
 
@@ -349,8 +332,7 @@ def visualize_results(dataset_path, frame_id, out_dir=None):
                 grasp = grasp[0]
             if grasp.shape == (4, 4):
                 draw_coord_frame(ax, grasp[:3, 3], grasp[:3, :3], scale=0.04)
-                ax.text(grasp[0, 3] + 0.02, grasp[1, 3], grasp[2, 3],
-                        "Grasp", fontsize=8, color="magenta")
+                ax.text(grasp[0, 3] + 0.02, grasp[1, 3], grasp[2, 3], "Grasp", fontsize=8, color="magenta")
                 for hi in range(0, len(best_traj), max(1, len(best_traj) // 5)):
                     draw_coord_frame(ax, best_traj[hi], grasp[:3, :3], scale=0.015, labels=False)
 
