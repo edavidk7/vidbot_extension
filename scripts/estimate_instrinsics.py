@@ -93,11 +93,23 @@ def calibrate_camera(image_dir, board_size, square_size, pixel_pitch, output_fil
         fig.tight_layout()
         plt.show()
 
+    width, height = gray.shape[::-1]
+    
+    # Format required by VidBot (flattened transposed 3x3 matrix)
+    intrinsic_matrix = [
+        mtx[0, 0].item(), 0.0, 0.0,
+        0.0, mtx[1, 1].item(), 0.0,
+        mtx[0, 2].item(), mtx[1, 2].item(), 1.0
+    ]
+
     # Save the calibration data to a JSON file
     calibration_data = {
+        "width": width,
+        "height": height,
+        "intrinsic_matrix": intrinsic_matrix,
         "camera_matrix": mtx.tolist(),
         "dist_coeff": dist.tolist(),
-        "image_size_px": gray.shape[::-1],
+        "image_size_px": [width, height],
         "board_size": board_size,
         "square_size_mm": square_size,
         "pixel_pitch_micron": pixel_pitch,
@@ -121,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument("--square_size", type=float, required=True)
     parser.add_argument("--pixel_pitch", type=float, required=True)
     parser.add_argument("--vis", action="store_true", default=False)
-    parser.add_argument("--output", type=str, default="calibration.json")
+    parser.add_argument("--output", type=str, default="camera_intrinsic.json", help="Output filename for intrinsics. Defaults to camera_intrinsic.json")
     parser.add_argument("--intrinsic_guess", action="store_true", default=False, help="Whether to use guessed intrinsics as the initial estimate for calibration")
     parser.add_argument("--fx_guess", type=float, default=0.0, help="Guessed focal length in pixels (fx) for intrinsic_guess"
                         )

@@ -168,12 +168,11 @@ uv run python scripts/estimate_instrinsics.py \
   --board_size 9 6 \
   --square_size 25 \
   --pixel_pitch 1.4 \
-  --output calibration.json
+  --output camera_intrinsic.json
 ```
 
-Then convert/export the result into `camera_intrinsic.json` format above.
-
-This matrix needs to be transposed before being linearized for the vidbot format.
+The script will automatically calculate and format the output as `camera_intrinsic.json` ready for VidBot.
+(Note: VidBot requires a specific 1D array layout where the intrinsic matrix is transposed and flattened. The script handles this conversion for you automatically). Simply copy the output file into your dataset folder.
 
 ### Step 3) (Optional) Estimate depth from RGB frames
 

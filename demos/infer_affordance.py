@@ -6,6 +6,10 @@ from omegaconf import OmegaConf
 import torch
 import numpy as np
 import cv2
+import matplotlib
+matplotlib.use("Agg")  # headless backend — must be set before pyplot import
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from diffuser_utils.guidance_loss import DiffuserGuidance
 from diffuser_utils.guidance_params import GUIDANCE_PARAMS_DICT
 import diffuser_utils.dataset_utils as DatasetUtils
@@ -24,6 +28,104 @@ VLM.float()
 VLM.eval()
 for p in VLM.parameters():
     p.requires_grad = False
+
+
+def project_points(points_3d: np.ndarray, intr: np.ndarray) -> np.ndarray:
+    """Project Nx3 3-D points to pixel coordinates using intrinsic matrix.
+
+    Args:
+        points_3d: (N, 3) array of XYZ coordinates in camera frame.
+        intr: (3, 3) camera intrinsic matrix  [[fx,0,cx],[0,fy,cy],[0,0,1]].
+
+    Returns:
+        (N, 2) array of (u, v) pixel coordinates (may be outside image bounds).
+    """
+    z = points_3d[:, 2:3].clip(1e-6, None)
+    uv = (points_3d[:, :2] / z) * np.array([[intr[0, 0], intr[1, 1]]]) + np.array([[intr[0, 2], intr[1, 2]]])
+    return uv  # (N, 2)
+
+
+def save_trajectory_visualization(
+    data_batch: dict,
+    save_path: str,
+    instruction: str = "",
+    object_idx: int = 0,
+) -> None:
+    """Render trajectories projected onto the colour image and save to *save_path*.
+
+    Draws all predicted trajectories coloured by guidance loss (turbo colourmap)
+    and highlights the best trajectory in a brighter colour.  Falls back
+    gracefully when guidance losses or grasp pose are unavailable.
+    """
+    # ------------------------------------------------------------------ data
+    pred_trajs = data_batch["pred_trajectories"]  # [B, N, H, 3]
+    color_tensor = data_batch["color"][0]          # [3, H, W]  float 0-1
+    intr = data_batch["intrinsics"][0].cpu().numpy()  # [3, 3]
+
+    # Reconstruct uint8 BGR image for OpenCV / plt display
+    color_np = color_tensor.cpu().numpy().transpose(1, 2, 0)  # H, W, 3  (RGB, 0-1)
+    img_h, img_w = color_np.shape[:2]
+
+    # ------------------------------------------------- per-trajectory colours
+    n_trajs = pred_trajs.shape[1]
+    has_losses = "guide_losses" in data_batch
+    if has_losses:
+        losses = data_batch["guide_losses"]["total_loss"].detach().cpu().numpy()  # [B, N]
+        losses = losses.reshape(-1)[:n_trajs]  # flatten batch dim → [N]
+        # Normalise to [0, 1]  (low loss → good)
+        l_min, l_max = losses.min(), losses.max()
+        norm_losses = (losses - l_min) / (l_max - l_min + 1e-9)  # [N]
+        # turbo: 0→blue (high loss/bad), 1→yellow (low loss/good)
+        traj_colors = cm.turbo(1.0 - norm_losses)  # (N, 4) RGBA
+        best_idx = int(np.argmin(losses))
+    else:
+        traj_colors = cm.tab20(np.linspace(0, 1, n_trajs))  # (N, 4) RGBA
+        best_idx = 0
+
+    # -------------------------------------------------------- draw on canvas
+    fig, ax = plt.subplots(figsize=(img_w / 80, img_h / 80), dpi=100)
+    ax.imshow(color_np)
+    ax.axis("off")
+
+    for ti in range(n_trajs):
+        traj = pred_trajs[0, ti].cpu().numpy()  # (H, 3)
+        # Filter points behind the camera
+        valid = traj[:, 2] > 0.01
+        if valid.sum() < 2:
+            continue
+        uv = project_points(traj[valid], intr)  # (M, 2)
+        # Clip to a slightly wider region so lines that exit partially still render
+        alpha = 0.85 if ti == best_idx else 0.35
+        lw = 2.5 if ti == best_idx else 0.8
+        # traj_colors[ti] is a length-4 RGBA array — convert to tuple for matplotlib
+        color = tuple(float(c) for c in traj_colors[ti])
+        ax.plot(uv[:, 0], uv[:, 1], color=color, linewidth=lw, alpha=alpha, solid_capstyle="round")
+        # Mark trajectory start/end for the best trajectory
+        if ti == best_idx:
+            ax.plot(uv[0, 0], uv[0, 1], "o", color=color, markersize=6, alpha=0.95)
+            ax.plot(uv[-1, 0], uv[-1, 1], "*", color=color, markersize=9, alpha=0.95)
+
+    # ---------------------------------------------------------------- title
+    title = "Affordance trajectories"
+    if instruction:
+        title += f"  |  '{instruction}'"
+    if has_losses:
+        title += f"  |  best loss={losses[best_idx]:.4f}"
+    ax.set_title(title, fontsize=9, pad=4)
+
+    # ---------------------------------------------------- colourbar legend
+    if has_losses and n_trajs > 1:
+        sm = plt.cm.ScalarMappable(cmap="turbo_r", norm=plt.Normalize(vmin=l_min, vmax=l_max))
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax, fraction=0.025, pad=0.01)
+        cbar.set_label("guidance loss", fontsize=7)
+        cbar.ax.tick_params(labelsize=6)
+
+    plt.tight_layout(pad=0.3)
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("[viz] Saved trajectory overlay → {}".format(save_path))
 
 
 def main(args):
@@ -253,6 +355,21 @@ def main(args):
             data_batch["pred_trajectories"] = data_batch["pred_trajectories"][:, :, :60]
             inference_engine.smooth_traj(data_batch)
 
+            # ── Auto-generate trajectory visualization ──────────────────────
+            if not args.no_auto_viz:
+                viz_name = "{:06d}_{:06d}_{}.png".format(
+                    frame_id, n, args.instruction.replace(" ", "-")
+                )
+                viz_save_path = os.path.join(
+                    dataset_path, "visualizations", viz_name
+                )
+                save_trajectory_visualization(
+                    data_batch,
+                    viz_save_path,
+                    instruction=args.instruction,
+                    object_idx=n,
+                )
+
         # Save trajectories and guidance losses
         if not args.no_save:
             os.makedirs(os.path.dirname(results_save_path), exist_ok=True)
@@ -344,6 +461,8 @@ if __name__ == "__main__":
                         help="Depth source: auto (prefer metric3d>dav3>raw), metric3d, dav3, or raw sensor depth")
     parser.add_argument("--use_graspnet", action="store_true",
                         help="Use the graspnet, use this if GraspNet is successfully installed, othewise we use a heuristic approach to acuqire the grasp pose")
+    parser.add_argument("--no_auto_viz", action="store_true",
+                        help="Suppress automatic trajectory visualization image saved to {dataset}/visualizations/")
     args = parser.parse_args()
     pl.seed_everything(42)
 
