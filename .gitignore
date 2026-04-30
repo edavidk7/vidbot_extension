@@ -24,3 +24,4 @@ inference_results/
 manip_render/
 pretrained_weights/.DS_Store
 .DS_Store
+datasets/*/embeddings

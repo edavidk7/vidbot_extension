@@ -53,8 +53,8 @@ class GoalPredictorModule(pl.LightningModule):
         data_batch.update({"action_feature": action_feature.float()})
         data_batch.update({"verb_feature": verb_feature.float()})
 
-    def forward(self, data_batch, training=False):
+    def forward(self, data_batch, training=False, return_embeddings=False):
         # self.encode_action(data_batch)
         curr_policy = self.nets["policy"]
-        outputs = curr_policy(data_batch, training)
+        outputs = curr_policy(data_batch, training, return_embeddings=return_embeddings)
         return outputs

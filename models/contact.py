@@ -61,7 +61,7 @@ class ContactPredictor(pl.LightningModule):
         self.positional_embedding = PositionalEmbeddingV2(
             d_model=512, max_len=400)
 
-    def forward(self, data_batch, training=False):
+    def forward(self, data_batch, training=False, return_embeddings=False):
         outputs = {}
         object_color_key = "object_color"
         object_depth_key = "object_depth"
@@ -73,7 +73,7 @@ class ContactPredictor(pl.LightningModule):
             object_depth = data_batch[object_depth_key][:, None]
             inputs = torch.cat([inputs, object_depth], dim=1)
         features = self.visual(inputs)
-        features = self.forward_latent(data_batch, features)
+        features, embs = self.forward_latent(data_batch, features, return_embeddings=return_embeddings)
         pred = self.decoder(features)
 
         # Post-process the prediction
@@ -88,10 +88,13 @@ class ContactPredictor(pl.LightningModule):
         pred_final.append(pred_mask)
         pred_final = torch.cat(pred_final, dim=1)
         outputs["pred"] = pred_final  # [B, 8+1, H, W]
+        if return_embeddings:
+            outputs["embeddings"] = embs
         return outputs
 
-    def forward_latent(self, data_batch, features):
+    def forward_latent(self, data_batch, features, return_embeddings=False):
         latent = features[self.bottleneck_feature_key]
+        visual_bottleneck = latent.clone() if return_embeddings else None
         h, w = latent.shape[-2:]
         latent = einops.rearrange(latent, "b c h w -> b (h w) c")
         latent = self.visual_proj(latent)
@@ -106,4 +109,10 @@ class ContactPredictor(pl.LightningModule):
         latent = self.fuser(latent)
         latent = einops.rearrange(latent, "b (h w) c -> b c h w", h=h, w=w)
         features[self.bottleneck_feature_key] = latent
-        return features
+        embs = None
+        if return_embeddings:
+            embs = {
+                "visual_bottleneck": visual_bottleneck,     # [B, 2048, H_b, W_b] pre-fusion
+                "fused_bottleneck": latent.clone(),         # [B, 2048, H_b, W_b] post-fusion
+            }
+        return features, embs

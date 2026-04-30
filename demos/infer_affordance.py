@@ -337,6 +337,35 @@ def main(args):
                 sample_num=100,
             )
 
+            # ── Save per-object intermediate embeddings ────────────────────
+            # Always pop embedding dicts from data_batch so export_results
+            # (the .npz save) doesn't see them as unknown types.
+            contact_embs = data_batch.pop("contact_embeddings", None)
+            goal_embs = data_batch.pop("goal_embeddings", None)
+            if not args.no_save:
+                emb_keys = [
+                    "grounding_dino_logits",
+                    "action_feature",
+                    "verb_feature",
+                ]
+                emb_dict = {k: data_batch[k].cpu() for k in emb_keys if k in data_batch}
+                for prefix, embs in (("contact", contact_embs), ("goal", goal_embs)):
+                    if embs is not None:
+                        for sub_key, tensor in embs.items():
+                            emb_dict[f"{prefix}/{sub_key}"] = tensor.cpu()
+                emb_name = "{:06d}_{:06d}_{}.pt".format(
+                    frame_id, n, args.instruction.replace(" ", "-")
+                )
+                emb_save_path = os.path.join(dataset_path, "embeddings", emb_name)
+                os.makedirs(os.path.dirname(emb_save_path), exist_ok=True)
+                torch.save(emb_dict, emb_save_path)
+                print("[emb] Saved embeddings → {}".format(emb_save_path))
+        else:
+            print(
+                "[emb] WARNING: --skip_coarse_stage is set — contact, goal, and "
+                "GroundingDINO embeddings will be omitted from the embeddings file."
+            )
+
         inference_engine.compute_object_contact_normal(
             data_batch
         )

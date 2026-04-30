@@ -148,7 +148,7 @@ class GoalPredictor(pl.LightningModule):
             nn.Linear(self.visual_feature_dim, 1),
         )
 
-    def forward(self, data_batch, training=False):
+    def forward(self, data_batch, training=False, return_embeddings=False):
         target_key = "vfd"
         color_key = "color"
         object_color_key = "object_color"
@@ -183,6 +183,7 @@ class GoalPredictor(pl.LightningModule):
             context_feature.clone(), "b c h w -> b (h w) c", h=h_out, w=w_out
         )
         feature = context_feature
+        context_raw = context_feature.clone() if return_embeddings else None  # [B, HW, C]
 
         # Acquire bbox features
         condition_feature = []
@@ -247,10 +248,13 @@ class GoalPredictor(pl.LightningModule):
             feature = self.fuser(feature, condition_feature)
             feature = self.proj(feature)
 
+        context_fused = feature.clone() if return_embeddings else None  # [B, HW, C]
+
         depth_feature = feature
         verb_feature = data_batch["verb_feature"][:, None]
 
         depth_feature = self.depth_fuser(depth_feature, verb_feature)
+        depth_feature_emb = depth_feature.clone() if return_embeddings else None  # [B, HW, perceiver_last_dim]
         pred_depth = self.depth_proj(depth_feature)
 
         feature = einops.rearrange(
@@ -282,5 +286,10 @@ class GoalPredictor(pl.LightningModule):
             )  # [B, 4, H, W]
 
         outputs = {"pred": pred}
-
+        if return_embeddings:
+            outputs["embeddings"] = {
+                "context_raw": context_raw,       # [B, HW, C]  pre-condition-fusion
+                "context_fused": context_fused,   # [B, HW, C]  post-fuser+proj
+                "depth_feature": depth_feature_emb,  # [B, HW, perceiver_last_dim]  post-depth_fuser
+            }
         return outputs

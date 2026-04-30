@@ -315,7 +315,7 @@ class AffordanceInferenceEngine(pl.LightningModule):
         return grasp_poses_valid
 
     @torch.no_grad()
-    def forward_detect(self, data_batch, text, box_thres=0.25, text_thres=0.25):
+    def forward_detect(self, data_batch, text, box_thres=0.25, text_thres=0.25, return_embeddings=False):
         from groundingdino.util.inference import predict  # type: ignore
         assert len(data_batch["color_raw"]) == 1, "Only support batch size 1"
         color_np = data_batch["color_raw"][0].cpu().numpy().transpose(1, 2, 0)
@@ -326,7 +326,7 @@ class AffordanceInferenceEngine(pl.LightningModule):
         color_np = (color_np * 255).astype(np.uint8)
         color_pil = Image.fromarray(color_np)
         color_inp, _ = self.transform(color_pil, None)
-        boxes, logits, phrases = predict(
+        boxes, grounding_dino_logits, phrases = predict(
             model=self.nets["detector"],
             image=color_inp,
             caption=text,
@@ -334,6 +334,8 @@ class AffordanceInferenceEngine(pl.LightningModule):
             text_threshold=text_thres,
             device=str(self._device),
         )
+        # Store full logit tensor [1, nq, 256] for embedding extraction
+        data_batch["grounding_dino_logits"] = grounding_dino_logits.cpu()
 
         h, w, _ = color_np.shape
         boxes = boxes * torch.Tensor([w, h, w, h])
@@ -571,7 +573,9 @@ class AffordanceInferenceEngine(pl.LightningModule):
         batch_size, _, height, width = data_batch["color"].shape
         patch_height, patch_width = data_batch["object_color"].shape[2:]
 
-        outputs_contact = self.nets["contact"](data_batch)
+        outputs_contact = self.nets["contact"](data_batch, return_embeddings=True)
+        if "embeddings" in outputs_contact:
+            data_batch["contact_embeddings"] = outputs_contact["embeddings"]
         contact_vf = outputs_contact["pred"][:, :2]
         pred_scores = outputs_contact["pred"][:, -1].sigmoid()  # [B, H, W]
         pred_mask = (pred_scores > 0).float()
@@ -893,7 +897,9 @@ class AffordanceInferenceEngine(pl.LightningModule):
         sample_num=1000,
     ):
         # time_begin = time.time()
-        outputs_goal = self.nets["goal"](data_batch)
+        outputs_goal = self.nets["goal"](data_batch, return_embeddings=True)
+        if "embeddings" in outputs_goal:
+            data_batch["goal_embeddings"] = outputs_goal["embeddings"]
         height, width = data_batch["color"].shape[2:]
         goal_vfd, goal_heatmap = (
             outputs_goal["pred"][:, :3],
